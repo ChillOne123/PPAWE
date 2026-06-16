@@ -4,101 +4,101 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
-# 加载 .env 文件中的环境变量
 load_dotenv()
 
-# 页面配置
-st.set_page_config(page_title="PPAWE 学术撰写引擎", layout="wide")
-st.title("🚀 PPAWE 极速学术撰写与自动引文引擎")
+st.set_page_config(page_title="PPAWE 学术对话引擎", layout="wide")
+st.title("🚀 PPAWE 2.0：对话式学术增强引擎")
 
-# ================= 1. API 与客户端配置 =================
-# 优先从 .env 读取，如果没有，再回退到侧边栏输入
+# ================= 1. API 配置 =================
 env_api_key = os.getenv("SILICONFLOW_API_KEY", "")
 API_KEY = st.sidebar.text_input("硅基流动 API Key", value=env_api_key, type="password")
-
 BASE_URL = "https://api.siliconflow.cn/v1" 
-MODEL_NAME = "deepseek-ai/DeepSeek-V2-Chat"
+MODEL_NAME = "deepseek-ai/DeepSeek-V4-Pro" 
 
-# 初始化客户端
-if API_KEY:
-    client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
-else:
+if not API_KEY:
     st.sidebar.warning("请先输入 API Key")
+    st.stop()
 
-# ================= 2. 数据源加载与解析 =================
-st.sidebar.header("文献元数据载入")
-uploaded_file = st.sidebar.file_uploader("上传知网导出的 Excel/CSV (需包含：作者, 年份, 标题, 摘要)", type=["xlsx", "csv"])
+client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+
+# ================= 2. 文献库无声注入 =================
+st.sidebar.header("文献元数据注入区")
+uploaded_file = st.sidebar.file_uploader("上传知网导出的 Excel/CSV", type=["xlsx", "csv"])
 
 references_context = ""
 if uploaded_file is not None:
-    # 兼容 csv 和 excel
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)
     
-    st.sidebar.success(f"成功加载 {len(df)} 篇文献元数据！")
+    st.sidebar.success(f"成功挂载 {len(df)} 篇文献！引擎已具备该领域的防幻觉装甲。")
     
-    # 将 DataFrame 转换为大模型易读的字符串格式
-    # 假设你的列名大概是这些，如果不一样请在代码里微调
-    # 核心逻辑：提取必需要素，摒弃冗余噪音
     for index, row in df.iterrows():
-        # 容错处理，防止空值报错
-        author = str(row.get('作者', '未知作者')).split(';')[0] # 取第一作者
-        year = str(row.get('年份', '未知年份'))
-        title = str(row.get('标题', '未知标题'))
-        abstract = str(row.get('摘要', '无摘要'))[:200] # 截断超长摘要，节省 Token
-        
-        references_context += f"- 【文献ID】: ({author}, {year})\n  【标题】: {title}\n  【核心观点/摘要】: {abstract}\n\n"
-        
-    with st.expander("查看当前注入的文献知识库 (Prompt Context)"):
-        st.text(references_context)
+        author = str(row.get('作者', '未知')).split(';')[0]
+        year = str(row.get('年份', '未知'))
+        title = str(row.get('标题', '未知'))
+        abstract = str(row.get('摘要', '无'))[:500]
+        references_context += f"- ({author}, {year}) | 标题: {title} | 摘要: {abstract}\n"
 
-# ================= 3. 撰写控制台 =================
-st.subheader("核心段落撰写")
-draft_instruction = st.text_area(
-    "输入撰写指令与大致结构 (例如：请论述公共政策执行中的街头官僚自由裁量权，分为三个层次...)", 
-    height=150
-)
+# ================= 3. 记忆与对话构建 =================
+# 初始化对话历史记忆
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if st.button("生成正文并自动插桩引文", type="primary"):
-    if not API_KEY or not uploaded_file or not draft_instruction:
-        st.error("请确保 API Key、文献文件和撰写指令都已提供！")
-    else:
-        with st.spinner("DeepSeek 正在结合文献撰写中..."):
-            # 这里的 System Prompt 是压制幻觉、规范学术格式的灵魂
-            system_prompt = """
-            你是一个严谨的计算社会科学领域的学术研究员。你的任务是根据用户提供的【指令】撰写学术论文的正文段落。
-            
-            【绝对规则】：
-            1. 你的论点必须并且只能基于下方提供的【文献知识库】。
-            2. 严禁捏造、虚构任何学者、数据或理论（严禁幻觉）。
-            3. 每当你引用、总结或借鉴了某篇文献的观点时，必须在句末严谨地插入引用标签，格式严格为：(作者, 年份)。
-            4. 如果用户的指令超出了提供的文献库范围，请直接在正文中用括号标出：[此处缺乏相关文献支撑]。
-            5. 使用专业、客观、学术化的书面表达。
-            """
-            
-            user_prompt = f"【文献知识库】\n{references_context}\n\n【撰写指令】\n{draft_instruction}"
-            
-            try:
-                # 调用模型
-                response = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=0.3, # 调低温度，保证学术输出的稳定性和确定性
-                    stream=True
-                )
-                
-                # 流式输出结果，体验更好
-                result_container = st.empty()
-                full_response = ""
-                for chunk in response:
-                    if chunk.choices[0].delta.content is not None:
-                        full_response += chunk.choices[0].delta.content
-                        result_container.markdown(full_response)
-                        
-            except Exception as e:
-                st.error(f"调用 API 失败: {e}")
+# 渲染历史对话
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# 接收用户新输入
+if prompt := st.chat_input("和 PPAWE 探讨理论框架，或让它直接开始撰写正文..."):
+    # 将用户输入存入记忆并显示在界面上
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # 动态构建具有混合感知能力的 System Prompt
+    system_prompt = f"""
+    你是一个深谙公共管理理论与计算社会科学的顶尖学术助理。你不仅拥有宏大的理论视野，还具备极其严谨的治学态度。
+
+    【工作模式】：
+    你可以正常与用户进行头脑风暴、探讨理论（如多源流、协同治理、街头官僚等）、构建论文大纲。这部分你可以充分调用你的内在专业知识。
+
+    【红线规则：引文防幻觉】：
+    1. 当用户要求你**撰写学术论文的正文/文献综述**时，如果在论述中需要佐证、列举学者观点或研究结论，**必须且只能**从下方的【当前挂载文献库】中寻找依据，并在句末严格插入格式为 `(作者, 年份)` 的标注。
+    2. 如果你想表达一个重要观点，但【当前挂载文献库】中找不到任何能支撑该观点的文献，你可以用自己的理论常识写出这段话，但在该段落结尾用方括号提示用户：[提示：此段逻辑缺乏实证文献支撑，建议补充相关数据或文献]。
+    3. **绝对禁止**凭空捏造任何带有 (作者, 年份) 格式的引文。
+
+    【当前挂载文献库】：
+    {references_context if references_context else "当前未挂载任何文献。你可以自由交流，但在被要求撰写带引文的学术文本时，请提醒用户挂载数据。"}
+    """
+
+    # 组装发给 API 的消息（包含系统指令和过去的记忆）
+    api_messages = [{"role": "system", "content": system_prompt}]
+    for msg in st.session_state.messages:
+        api_messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # 模型输出响应
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=api_messages,
+                temperature=0.5, # 稍微调高温度，让它的理论推演更灵活，但系统提示词会锁死引文格式
+                stream=True
+            )
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    full_response += chunk.choices[0].delta.content
+                    message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(full_response)
+        except Exception as e:
+            st.error(f"引擎响应异常: {e}")
+            full_response = "出错了，请检查 API 或网络连接。"
+
+    # 将助手的回答存入记忆
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
