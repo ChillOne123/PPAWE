@@ -7,3 +7,6 @@ openpyxl>=3.1.0
 
 # LLM 接口
 openai>=1.14.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
