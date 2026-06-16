@@ -1,0 +1,25 @@
+# Python 编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+
+# Streamlit 本地配置与密钥 (非常重要！)
+.streamlit/secrets.toml
+
+# 环境变量文件 (防止 API Key 泄露)
+.env
+
+# 文献数据与表格 (防止把知网下载的私人数据集传上去)
+*.xlsx
+*.csv
+*.xls
+
+# 操作系统生成文件
+.DS_Store
+Thumbs.db
